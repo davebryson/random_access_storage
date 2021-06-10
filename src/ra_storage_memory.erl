@@ -54,23 +54,21 @@
 -type state() :: {MemoryPager :: module(), Length :: pos_integer()}.
 
 %% @doc Create a new instance with a default page size of (1024 * 1024)
+-spec new() -> State :: state().
 new() ->
     new(?DEFAULT_PAGE_SIZE).
 
 %% @doc Create a new instance with the given page size.  Will error if
 %% page size is not a power of two.
+-spec new(PageSize :: pos_integer()) -> State :: state().
 new(PageSize) ->
-    case power_of_two(PageSize) of
-        true ->
-            {
-                memory_pager:new(PageSize),
-                0
-            };
-        _ ->
-            erlang:error({badarg, not_power_of_two})
-    end.
+    {
+        memory_pager:new(PageSize),
+        0
+    }.
 
 %% @doc Write data to memory at the given byte offset
+-spec write(Offset :: pos_integer(), Data :: binary(), State :: state()) -> {ok, State :: state()}.
 write(Offset, Data, {{Pager, PageSize}, Length}) ->
     PageNum = Offset div PageSize,
     PageCursor = (Offset - (PageNum * PageSize)),
@@ -100,7 +98,6 @@ write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {{_, PageSize} =
     RangeLen = UpperBound - PageCursor,
 
     %% Get the buffer for the given page
-    %PageBuffer = array:get(PageNum, Buffers),
     PageBuffer =
         case memory_pager:get(PageNum, Mp) of
             {none, _} -> <<0:PageSize/unit:8>>;
@@ -110,8 +107,6 @@ write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {{_, PageSize} =
     UpdatedBuffer = copy_binary(DataCursor, PageCursor, RangeLen, Data, PageBuffer),
 
     %% Write it to the page
-    %PageList = array:set(PageNum, UpdatedBuffer, Buffers),
-    %%
     {ok, _, Mp1} = memory_pager:set(PageNum, UpdatedBuffer, Mp),
 
     %% Keep going while there's still data to process
@@ -125,16 +120,17 @@ write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {{_, PageSize} =
     ).
 
 %% @doc Get the page buffer for the given page number
+-spec get_page(PageNum :: pos_integer(), State :: state()) -> none | {ok, Data :: binary()}.
 get_page(PageNum, {Pager, _}) ->
     case memory_pager:get(PageNum, Pager) of
         {none, _} -> none;
         {ok, {_, B}, _} -> {ok, B}
     end.
-%Page = array:get(PageNum, PageList),
-%{ok, Page}.
 
 %% @doc Read the given number of bytes from the byte offset.  This may 'walk'
-%% several 'pages' to gather the data.
+%% several 'pages' to gather the results.
+-spec read(Offset :: pos_integer(), BytesToRead :: pos_integer(), State :: state()) ->
+    {error, out_of_bounds} | {ok, Result :: binary(), State :: state()}.
 read(Offset, BytesToRead, {{_, _}, Length}) when (Offset + BytesToRead) > Length ->
     {error, out_of_bounds};
 read(Offset, BytesToRead, {{_, PageSize}, _} = State) ->
@@ -176,7 +172,6 @@ read_from_pages(
     MinimalBound = min(PageBounds, BufferBounds),
 
     %% Get the buffer for the given page and copy stuff
-    %PageBuffer = array:get(PageNum, Buffers),
     case memory_pager:get(PageNum, Mp) of
         {ok, {_, PageBuffer}, _} ->
             OutBuffer1 = copy_binary(
@@ -199,6 +194,8 @@ read_from_pages(
     end.
 
 %% @doc Delete the number of bytes starting at the offset.
+-spec del(Offset :: pos_integer(), BytesToDelete :: pos_integer(), State :: state()) ->
+    {ok, State :: state()}.
 del(Offset, BytesToDelete, {{_, _}, _Length} = State) ->
     {ok, {{Pager, PageSize}, L}} = write(Offset, <<0:BytesToDelete/unit:8>>, State),
     NewLen =
@@ -208,6 +205,8 @@ del(Offset, BytesToDelete, {{_, _}, _Length} = State) ->
         end,
     {ok, {{Pager, PageSize}, NewLen}}.
 
+%% @doc return the amount of data stored (in bytes)
+-spec len(State :: state()) -> {ok, Amount :: pos_integer(), State :: state()}.
 len({_, _, Length} = State) ->
     {ok, Length, State}.
 
@@ -217,13 +216,6 @@ update_length(Offset, DataSize, Length) ->
     case Nl > Length of
         true -> Nl;
         _ -> Length
-    end.
-
-%% @private Return true if Value is a power of two
-power_of_two(Value) ->
-    case (Value band (Value - 1)) of
-        0 -> true;
-        _ -> false
     end.
 
 %% @private Copy a binary from src to dest. given the cursor positions, amount
