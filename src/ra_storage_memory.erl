@@ -9,7 +9,7 @@
 %%%  indexed by a index number to store the data.
 %%%
 %%%  When writing data, if the offset to write at and the length of the incoming
-%%%  data is <= buffer size, we simply copy it all to that given page/buffer.
+%%%  data is less than or equal to the buffer size, we simply copy it all to that given page/buffer.
 %%%  But, what if the incoming data is larger than a single buffer, possibly
 %%%  spanning multiple buffers?
 %%%
