@@ -23,19 +23,6 @@
     State :: term()
 ) -> {ok, State :: term()} | {error, Reason :: term()}.
 
--callback truncate(
-    Length :: pos_integer(),
-    State :: term()
-) -> {ok, State :: term()} | {error, Reason :: term()}.
-
 -callback len(
     State :: term()
 ) -> {ok, pos_integer(), State :: term()} | {error, Reason :: term()}.
-
--callback is_empty(
-    State :: term()
-) -> {ok, boolean(), State :: term()} | {error, Reason :: term()}.
-
--callback sync_all(
-    State :: term()
-) -> {ok, State :: term()} | {error, Reason :: term()}.

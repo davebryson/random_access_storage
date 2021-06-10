@@ -1,9 +1,12 @@
 %%% @doc
-%%%  Random Access Memory Storage (Paged Memory)
+%%%  Random Access Memory Storage
 %%%
-%%%  The biggest challenge here is fitting data into the correct page/pages.
+%%%  Memory buffers are used to store data of a configured size.  When the incoming
+%%%  data is larger than a buffer, a new one is automatically created.
+%%%
+%%%  The biggest challenge here is fitting data into the correct buffer(s).
 %%%  Instead of using 1 huge buffer for the data, we use several small buffers
-%%%  indexed by a page number to store the data.
+%%%  indexed by a index number to store the data.
 %%%
 %%%  When writing data, if the offset to write at and the length of the incoming
 %%%  data is <= buffer size, we simply copy it all to that given page/buffer.
@@ -43,17 +46,17 @@
     read/3,
     get_page/2,
     del/3,
-    truncate/2,
-    len/1,
-    is_empty/1,
-    sync_all/1
+    len/1
 ]).
 
 -define(DEFAULT_PAGE_SIZE, (1024 * 1024)).
 
+%% @doc Create a new instance with a default page size of (1024 * 1024)
 new() ->
     new(?DEFAULT_PAGE_SIZE).
 
+%% @doc Create a new instance with the given page size.  Will error if
+%% page size is not a power of two.
 new(PageSize) ->
     case power_of_two(PageSize) of
         true ->
@@ -173,15 +176,18 @@ read_from_pages(
         State
     ).
 
-del(_Offset, _Data, State) -> {ok, State}.
+%% @doc Delete the number of bytes starting at the offset.
+del(Offset, BytesToDelete, {_, _, _Length} = State) ->
+    {ok, {Buffers, PageSize, L}} = write(Offset, <<0:BytesToDelete/unit:8>>, State),
+    NewLen =
+        case Offset + BytesToDelete > L of
+            true -> Offset;
+            _ -> L
+        end,
+    {ok, {Buffers, PageSize, NewLen}}.
 
-truncate(_, State) -> {ok, State}.
-
-len({_, _, Length} = State) -> {ok, Length, State}.
-
-is_empty({_, _, Length} = State) -> {ok, Length =:= 0, State}.
-
-sync_all(State) -> {ok, State}.
+len({_, _, Length} = State) ->
+    {ok, Length, State}.
 
 %% @private Calculate the total number of bytes written
 update_length(Offset, DataSize, Length) ->
