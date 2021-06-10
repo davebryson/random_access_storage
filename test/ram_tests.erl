@@ -25,7 +25,7 @@ small_test() ->
     {ok, <<0, 6, 6, 0>>} = ra_storage_memory:get_page(1, S5),
 
     %% Check length
-    {_, _, 12} = S5,
+    {{_, _}, 12} = S5,
     ok.
 
 overlapping_write_test() ->
@@ -40,7 +40,7 @@ overlapping_write_test() ->
     %% Write a byte to index 10000 (page 2500)
     {ok, S3} = ra_storage_memory:write(10000, <<7>>, S2),
     {ok, <<7, 0, 0, 0>>} = ra_storage_memory:get_page(2500, S3),
-    {_, _, 10001} = S3,
+    {{_, _}, 10001} = S3,
     ok.
 
 read_test() ->
@@ -55,8 +55,8 @@ read_test() ->
 
 del_test() ->
     S1 = ra_storage_memory:new(4),
-    {ok, {_, _, 10} = S2} = ra_storage_memory:write(2, <<1, 2, 2, 2, 2, 3, 3, 4>>, S1),
-    {ok, {_, _, 10} = S3} = ra_storage_memory:del(2, 8, S2),
+    {ok, {{_, _}, 10} = S2} = ra_storage_memory:write(2, <<1, 2, 2, 2, 2, 3, 3, 4>>, S1),
+    {ok, {{_, _}, 10} = S3} = ra_storage_memory:del(2, 8, S2),
     {ok, <<0, 0, 0, 0, 0, 0, 0, 0>>, S3} = ra_storage_memory:read(2, 8, S3),
     ok.
 

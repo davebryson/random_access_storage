@@ -51,6 +51,8 @@
 
 -define(DEFAULT_PAGE_SIZE, (1024 * 1024)).
 
+-type state() :: {MemoryPager :: module(), Length :: pos_integer()}.
+
 %% @doc Create a new instance with a default page size of (1024 * 1024)
 new() ->
     new(?DEFAULT_PAGE_SIZE).
@@ -61,8 +63,7 @@ new(PageSize) ->
     case power_of_two(PageSize) of
         true ->
             {
-                array:new([{fixed, false}, {default, <<0:PageSize/unit:8>>}]),
-                PageSize,
+                memory_pager:new(PageSize),
                 0
             };
         _ ->
@@ -70,7 +71,7 @@ new(PageSize) ->
     end.
 
 %% @doc Write data to memory at the given byte offset
-write(Offset, Data, {Buffers, PageSize, Length}) ->
+write(Offset, Data, {{Pager, PageSize}, Length}) ->
     PageNum = Offset div PageSize,
     PageCursor = (Offset - (PageNum * PageSize)),
     DataSize = byte_size(Data),
@@ -81,7 +82,7 @@ write(Offset, Data, {Buffers, PageSize, Length}) ->
         PageNum,
         Data,
         DataSize,
-        {Buffers, PageSize, NewLength}
+        {{Pager, PageSize}, NewLength}
     ).
 
 %% @private
@@ -89,7 +90,7 @@ write_to_pages(_, _, _, _, DataSize, State) when DataSize =:= 0 ->
     {ok, State};
 write_to_pages(DataCursor, _, _, _, DataSize, State) when DataCursor >= DataSize ->
     {ok, State};
-write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {Buffers, PageSize, Len}) ->
+write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {{_, PageSize} = Mp, Len}) ->
     %% How much data is left
     DataBound = DataSize - DataCursor,
     %% What's the most we can write to the page to fill it
@@ -99,12 +100,19 @@ write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {Buffers, PageSi
     RangeLen = UpperBound - PageCursor,
 
     %% Get the buffer for the given page
-    PageBuffer = array:get(PageNum, Buffers),
+    %PageBuffer = array:get(PageNum, Buffers),
+    PageBuffer =
+        case memory_pager:get(PageNum, Mp) of
+            {none, _} -> <<0:PageSize/unit:8>>;
+            {ok, {_, B}, _} -> B
+        end,
     %% Copy the data to the page buffer
     UpdatedBuffer = copy_binary(DataCursor, PageCursor, RangeLen, Data, PageBuffer),
 
     %% Write it to the page
-    PageList = array:set(PageNum, UpdatedBuffer, Buffers),
+    %PageList = array:set(PageNum, UpdatedBuffer, Buffers),
+    %%
+    {ok, _, Mp1} = memory_pager:set(PageNum, UpdatedBuffer, Mp),
 
     %% Keep going while there's still data to process
     write_to_pages(
@@ -113,19 +121,23 @@ write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {Buffers, PageSi
         PageNum + 1,
         Data,
         DataSize,
-        {PageList, PageSize, Len}
+        {Mp1, Len}
     ).
 
 %% @doc Get the page buffer for the given page number
-get_page(PageNum, {PageList, _, _}) ->
-    Page = array:get(PageNum, PageList),
-    {ok, Page}.
+get_page(PageNum, {Pager, _}) ->
+    case memory_pager:get(PageNum, Pager) of
+        {none, _} -> none;
+        {ok, {_, B}, _} -> {ok, B}
+    end.
+%Page = array:get(PageNum, PageList),
+%{ok, Page}.
 
 %% @doc Read the given number of bytes from the byte offset.  This may 'walk'
 %% several 'pages' to gather the data.
-read(Offset, BytesToRead, {_, _, Length}) when (Offset + BytesToRead) > Length ->
+read(Offset, BytesToRead, {{_, _}, Length}) when (Offset + BytesToRead) > Length ->
     {error, out_of_bounds};
-read(Offset, BytesToRead, {_, PageSize, _} = State) ->
+read(Offset, BytesToRead, {{_, PageSize}, _} = State) ->
     PageNum = Offset div PageSize,
     PageCursor = (Offset - (PageNum * PageSize)),
     OutBuffer = <<0:BytesToRead/unit:8>>,
@@ -154,7 +166,7 @@ read_from_pages(
     OutCursor,
     BytesToRead,
     OutBuffer,
-    {Buffers, PageSize, _} = State
+    {{_, PageSize} = Mp, _} = State
 ) ->
     %% Calculate the bounds for both binaries
     BufferBounds = BytesToRead - OutCursor,
@@ -164,27 +176,37 @@ read_from_pages(
     MinimalBound = min(PageBounds, BufferBounds),
 
     %% Get the buffer for the given page and copy stuff
-    PageBuffer = array:get(PageNum, Buffers),
-    OutBuffer1 = copy_binary(PageCursor, OutCursor, MinimalBound, PageBuffer, OutBuffer),
-
-    read_from_pages(
-        PageNum + 1,
-        0,
-        OutCursor + MinimalBound,
-        BytesToRead,
-        OutBuffer1,
-        State
-    ).
+    %PageBuffer = array:get(PageNum, Buffers),
+    case memory_pager:get(PageNum, Mp) of
+        {ok, {_, PageBuffer}, _} ->
+            OutBuffer1 = copy_binary(
+                PageCursor,
+                OutCursor,
+                MinimalBound,
+                PageBuffer,
+                OutBuffer
+            ),
+            read_from_pages(
+                PageNum + 1,
+                0,
+                OutCursor + MinimalBound,
+                BytesToRead,
+                OutBuffer1,
+                State
+            );
+        _ ->
+            {none, State}
+    end.
 
 %% @doc Delete the number of bytes starting at the offset.
-del(Offset, BytesToDelete, {_, _, _Length} = State) ->
-    {ok, {Buffers, PageSize, L}} = write(Offset, <<0:BytesToDelete/unit:8>>, State),
+del(Offset, BytesToDelete, {{_, _}, _Length} = State) ->
+    {ok, {{Pager, PageSize}, L}} = write(Offset, <<0:BytesToDelete/unit:8>>, State),
     NewLen =
         case Offset + BytesToDelete > L of
             true -> Offset;
             _ -> L
         end,
-    {ok, {Buffers, PageSize, NewLen}}.
+    {ok, {{Pager, PageSize}, NewLen}}.
 
 len({_, _, Length} = State) ->
     {ok, Length, State}.
