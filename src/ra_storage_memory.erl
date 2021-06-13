@@ -13,11 +13,8 @@
 %%%  But, what if the incoming data is larger than a single buffer, possibly
 %%%  spanning multiple buffers?
 %%%
-%%%               ... duh duh duh da ...
-%%%                 the plot thickens!
-%%%
 %%%  Visualize: Buffer size = 4
-%%%
+%%%```
 %%%  Offset   0
 %%%  Data:   [a,a,a,a]
 %%%  Buffer: [ , , , ]
@@ -33,7 +30,7 @@
 %%%  Offset   0  1
 %%%  Data:   [a][a]
 %%%  Buffer: [ ,  ,  ,  ]
-%%%
+%%%'''
 %%% @end
 -module(ra_storage_memory).
 
@@ -107,7 +104,7 @@ write_to_pages(DataCursor, PageCursor, PageNum, Data, DataSize, {{_, PageSize} =
     UpdatedBuffer = copy_binary(DataCursor, PageCursor, RangeLen, Data, PageBuffer),
 
     %% Write it to the page
-    {ok, _, Mp1} = memory_pager:set(PageNum, UpdatedBuffer, Mp),
+    {ok, Mp1} = memory_pager:set(PageNum, UpdatedBuffer, Mp),
 
     %% Keep going while there's still data to process
     write_to_pages(
